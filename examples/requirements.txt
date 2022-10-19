@@ -1,5 +1,8 @@
-# Common
-requests==2.28.1
+# Shared
+requests
 
-# NLP
-nltk==3.7
+# app.py
+tk
+
+# nlp.py
+nltk
