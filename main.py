@@ -2,11 +2,25 @@ from typing import List
 from fastapi import FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Required
 import uvicorn
-from seed import NewsItemModel, NewsItemSummaryModel, seed_data
+from scraper import scrape_articles
+from NewsItem import NewsItem, NewsItemModel, NewsItemSummaryModel
 
 app = FastAPI(
     title="CAS News API"
 )
+class Data:
+    data: List[NewsItem] = None
+
+    @staticmethod
+    def get():
+        if not Data.data:
+            Data.refetch()
+        return Data.data
+
+    @staticmethod
+    def refetch():
+        Data.data = scrape_articles("https://www.computingatschool.org.uk/news-and-blogs")
+
 
 class NotFoundModel(BaseModel):
     detail: str
@@ -21,18 +35,21 @@ async def root():
 
 
 class NewsIndexModel(BaseModel):
-    posts: NewsItemModel
+    posts: List[NewsItemSummaryModel]
+    count: int
 
 @app.get(
     "/news",
     description="This endpoint is used to return all news items",
-    response_model=List[NewsItemSummaryModel]
+    response_model=NewsIndexModel
 )
 async def news(page = 0, limit = 25):
     print("getting all posts")
     print("on page", page)
+    posts = [x.as_summary_model() for x in Data.get()]
     return NewsIndexModel(
-        posts=[x.as_summary_model() for x in seed_data]
+        posts=posts,
+        count=len(posts)
     )
 
 @app.get(
@@ -43,14 +60,16 @@ async def news(page = 0, limit = 25):
 )
 async def news_item(url_hash: str = Query(default=Required, min_length=32)):
     print("looking up post", url_hash)
-    result = filter(lambda x: x.url_hash == url_hash, seed_data)
+    result = filter(lambda x: x.url_hash == url_hash, Data.get())
     result = tuple(result)
     if (len(result) < 1):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="That news item was not found"
         )
-    return seed_data[0].as_model()
+    return result[0].as_model()
 
 if __name__ == "__main__":
+    # scrape_article("https://www.computingatschool.org.uk/news-and-blogs/2022/october/codeish-the-art-teaching-computing")
+    Data.refetch() # Preload data
     uvicorn.run(app)

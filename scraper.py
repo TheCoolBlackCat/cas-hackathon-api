@@ -3,81 +3,83 @@
 #
 
 
+from datetime import datetime
+from hashlib import md5
+from typing import List
 from bs4 import BeautifulSoup
-from os import path
 from pathlib import Path
 import requests
-from sys import argv
+import json
 
-BASE_FOLDER = "res/"
+from NewsItem import NewsItem
 
-def download_images(soup):
-    for img in soup.find_all("img"):
-        src = img.get("src") # TODO: Use data-src
-        if img and src:
-            print("Downloading Image: ", src)
-            file_path = download_resource("images", src)
-            if file_path:
-                img["src"] = file_path
-                print("Replacing URL with local image:", file_path)
+BASE_FOLDER = Path("res/")
 
+def scrape_article(url: str) -> NewsItem:
+    url_hash = md5(url.encode()).hexdigest()
 
-def download_resource(directory, url):
-    # Deal with base folder
-    if path.exists(BASE_FOLDER) and path.isdir(BASE_FOLDER):
-        print("Base folder exists at", BASE_FOLDER)
+    soup: BeautifulSoup = None
+    path = BASE_FOLDER.joinpath("posts")
+    path = path.joinpath(url_hash)
+    original_file = path.joinpath("original.html")
+    parsed_file = path.joinpath("parsed.json")
+    if path.exists():
+        try:
+            with open(parsed_file, "r") as f:
+                json_text = json.load(f)
+                return NewsItem.from_json(json_text)
+        except json.decoder.JSONDecodeError:
+            print("Invalid JSON in", parsed_file)
     else:
-        print("Creating base folder:", BASE_FOLDER)
+        # Fetch page and cache
+        path.mkdir(parents=True)
+        response = requests.get(url)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        with open(original_file, "w") as f:
+            f.write(soup.prettify())
+        
+        text = [line.get_text().strip() for line in soup.select("div.usercontent")]
+        date = datetime.strptime(
+            soup.select_one("p.blog-header-date").get_text().strip(), # "05 October 2022"
+            "%d %B %Y"
+        )
+
+        item = NewsItem(
+            url=url,
+            title=soup.select_one("h1.blog-header-title").get_text().strip(),
+            text="\n".join(text),
+            author=soup.select_one("p.blog-author-name").get_text().strip(),
+            date=date
+        )
+
+        item.dump_json(parsed_file)
+
+        return item
+
+def scrape_articles(root_url: str) -> List[NewsItem]:
+    response = requests.get(root_url)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.content, "html.parser")
+    index_path = BASE_FOLDER.joinpath(Path("index"))
+    page_number = soup.select_one("li.active").get_text().strip()
+
+    path = index_path.joinpath(Path(page_number))
+    if not path.exists():
+        path.mkdir(parents=True)
+        with open(path.joinpath("original.html"), "w") as f:
+            f.write(soup.prettify())
     
-    # Check for directory
-    directory = path.join(BASE_FOLDER, directory)
-    if path.exists(directory) and path.isdir(directory):
-        print(directory, "exists")
-    else: # Doesn't exist, create
-        print("Creating folder:", directory)
-        Path(directory).mkdir(parents=True, exist_ok=True)
+    links = soup.select("a.archive-list-results-item")
+    items = []
+    for link in links:
+        href = link.attrs["href"]
+        if href.startswith("/news-and-blogs"):
+            # if href.startswith("/"):
+            href = "https://www.computingatschool.org.uk" + href
+            items.append(scrape_article(href))
 
-    # Setup file_name
-    file_name = file_name = url.split('/')[-1] # Retrieve filename from URL
-    file_name = file_name.split('?')[0] # Remove query string (if applicable)
-
-    dst = path.join(directory, file_name)
-    if not path.exists(dst): # Check if destination exists
-        with open(dst, "wb") as f:
-            res = requests.get(url)
-            res.raw.decode_content = True
-            f.write(res.content) # Write image to file
-    else:
-        print("File already exists at", dst, "- skipping")
-
-    return dst
-
-
-def read_html(file_name="index.html"):
-    with open(file_name, "r") as f:
-        return f.read()
-
-
-
-def run(html):
-    soup = BeautifulSoup(html, "html.parser")
-    download_images(soup)
-    # TODO: Fonts, Video, etc.
-
-    # Export to file
-    with open("offline.html", "w") as f:
-        txt = soup.prettify()
-        f.write(txt)
-
-html = read_html() # Default read
-if len(argv) == 2:
-    f = argv[1]
-    if path.exists(f) and path.isfile(f):
-        print("Using custom file: ", f)
-        html = read_html(f)    
-
-if html:
-    run(html)
-else:
-    print("An error occurred reading the HTML file")
-
+    return items
+        
