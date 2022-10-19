@@ -1,2 +1,5 @@
-nltk==3.7
+# Common
 requests==2.28.1
+
+# NLP
+nltk==3.7

@@ -4,10 +4,10 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.probability import FreqDist
 
-def main():
-    API_URL = "http://localhost:8000"
-    URL_HASH = "aae8123de969670e63d741ba8a10a38a"
+API_URL = "http://localhost:8000"
+URL_HASH = "aae8123de969670e63d741ba8a10a38a"
 
+def main():
     response = requests.get(f"{API_URL}/news/{URL_HASH}")
     data = json.loads(response.content)
 
