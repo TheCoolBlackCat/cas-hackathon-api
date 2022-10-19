@@ -1,3 +1,8 @@
+#
+# Adapted from https://github.com/TheCoolBlackCat/html-offline
+#
+
+
 from bs4 import BeautifulSoup
 from os import path
 from pathlib import Path
